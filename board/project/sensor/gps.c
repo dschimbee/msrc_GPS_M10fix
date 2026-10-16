@@ -153,6 +153,7 @@ static void nmea_msg(char *cmd, bool enable);
 static void ubx_cfg_msg(uint8_t class, uint8_t id, bool enable);
 static void ubx_cfg_rate(uint16_t rate);
 static void ubx_cfg_dynmodel(uint8_t dynmodel);
+static void ubx_cfg_valset_dynmodel(uint8_t dynmodel);
 static void ubx_cfg_cfg(void);
 static bool set_home_altitude(uint fix_type);
 static bool check_ublox_crc(ublox_msg_t *msg);
@@ -506,7 +507,8 @@ static void set_ublox_config(uint rate, uint dynmodel) {
     nmea_msg("RMC", false);
     ubx_cfg_msg(0x01, 0x07, true);  // Enable message UBX-NAV-PVT
     ubx_cfg_msg(0x01, 0x04, true);  // Enable message UBX-NAV-DOP
-    ubx_cfg_dynmodel(dynmodel);     // Set dynmodel UBX-CFG-NAV5
+    ubx_cfg_dynmodel(dynmodel);     // Set dynmodel UBX-CFG-NAV5 (M8 and older)
+    ubx_cfg_valset_dynmodel(dynmodel);  // Set dynmodel UBX-CFG-VALSET (M9/M10)
     ubx_cfg_rate(rate);             // Set messages rate (UBX-CFG-RATE (0x06 0x08))
     ubx_cfg_cfg();                  // Save changes
 }
@@ -521,7 +523,8 @@ static void set_nmea_config(uint rate, uint dynmodel) {
     nmea_msg("RMC", true);
     ubx_cfg_msg(0x01, 0x07, false);  // Disable message UBX-NAV-PVT
     ubx_cfg_msg(0x01, 0x04, false);  // Disable message UBX-NAV-DOP
-    ubx_cfg_dynmodel(dynmodel);      // Set dynmodel UBX-CFG-NAV5
+    ubx_cfg_dynmodel(dynmodel);      // Set dynmodel UBX-CFG-NAV5 (M8 and older)
+    ubx_cfg_valset_dynmodel(dynmodel);  // Set dynmodel UBX-CFG-VALSET (M9/M10)
     ubx_cfg_rate(rate);              // Set messages rate (UBX-CFG-RATE (0x06 0x08))
     ubx_cfg_cfg();                   // Save changes
 }
@@ -575,6 +578,17 @@ static void ubx_cfg_dynmodel(uint8_t value) {
     ublox_msg.header = (ublox_header_t){.header = 0x62B5, .class = 0x06, .id = 0x24, .size = sizeof(ublox_cfg_nav5_t)};
     ublox_cfg_nav5_t payload = {.mask = 0x0001, .dynModel = value};
     ublox_msg.payload = (uint8_t *)&payload;
+    send_ublox_message(&ublox_msg);
+}
+
+static void ubx_cfg_valset_dynmodel(uint8_t value) {
+    // UBX-CFG-VALSET (0x06 0x8A), configuration interface of u-blox 9/10 modules.
+    // Key CFG-NAVSPG-DYNMODEL (0x20110021, 1 byte). Layers 0x07 = RAM | BBR | Flash.
+    // M8 and older modules do not know this message and ignore it.
+    ublox_msg_t ublox_msg;
+    uint8_t payload[9] = {0x00, 0x07, 0x00, 0x00, 0x21, 0x00, 0x11, 0x20, value};  // version, layers, reserved[2], key (LE), value
+    ublox_msg.header = (ublox_header_t){.header = 0x62B5, .class = 0x06, .id = 0x8A, .size = sizeof(payload)};
+    ublox_msg.payload = payload;
     send_ublox_message(&ublox_msg);
 }
 
