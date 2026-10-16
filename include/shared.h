@@ -43,7 +43,7 @@ typedef enum esc_protocol_t : uint8_t {
     ESC_OPENYGE
 } esc_protocol_t;
 
-typedef enum i2c_module_t : uint8_t { I2C_NONE, I2C_BMP280, I2C_MS5611, I2C_BMP180 } i2c_module_t;
+typedef enum i2c_module_t : uint8_t { I2C_NONE, I2C_BMP280, I2C_MS5611, I2C_BMP180, I2C_SPL06 } i2c_module_t;
 
 typedef enum analog_current_type_t : uint8_t { CURRENT_TYPE_HALL, CURRENT_TYPE_SHUNT } analog_current_type_t;
 
@@ -93,7 +93,7 @@ typedef enum esc_protocol_t {
     ESC_OPENYGE
 } esc_protocol_t;
 
-typedef enum i2c_module_t { I2C_NONE, I2C_BMP280, I2C_MS5611, I2C_BMP180 } i2c_module_t;
+typedef enum i2c_module_t { I2C_NONE, I2C_BMP280, I2C_MS5611, I2C_BMP180, I2C_SPL06 } i2c_module_t;
 
 typedef enum analog_current_type_t { CURRENT_TYPE_HALL, CURRENT_TYPE_SHUNT } analog_current_type_t;
 

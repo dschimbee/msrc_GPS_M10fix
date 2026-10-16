@@ -55,6 +55,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->cbBarometerType->addItem("BMP280", I2C_BMP280);
     ui->cbBarometerType->addItem("MS5611", I2C_MS5611);
     ui->cbBarometerType->addItem("BMP180", I2C_BMP180);
+    ui->cbBarometerType->addItem("SPL06", I2C_SPL06);
 
     ui->cbCurrentSensorType->addItem("Hall effect", CURRENT_TYPE_HALL);
     ui->cbCurrentSensorType->addItem("Shunt resistor", CURRENT_TYPE_SHUNT);

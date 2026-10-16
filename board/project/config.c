@@ -20,8 +20,8 @@
 #define ENABLE_ANALOG_CURRENT false
 #define ENABLE_ANALOG_NTC false
 #define ENABLE_ANALOG_AIRSPEED false
-#define I2C1_TYPE I2C_NONE  // I2C_NONE, I2C_BMP280, I2C_MS5611, I2C_BMP180
-#define I2C1_ADDRESS 0x77   // 0x76 (BMP280), 0x77 (BMP180, MS5611)
+#define I2C1_TYPE I2C_NONE  // I2C_NONE, I2C_BMP280, I2C_MS5611, I2C_BMP180, I2C_SPL06
+#define I2C1_ADDRESS 0x77   // 0x76 (BMP280), 0x77 (BMP180, MS5611), 0x76/0x77 auto-detected (SPL06)
 /* Pwm out */
 #define ENABLE_PWM_OUT false
 /* Refresh rate in ms (only Frsky) */

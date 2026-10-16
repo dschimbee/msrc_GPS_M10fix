@@ -64,6 +64,7 @@ It allows you to collect data from multiple sensors and transmit it to your rece
 - BMP180
 - BMP280
 - MS5611
+- SPL06
 
 ### Analog Sensors
 

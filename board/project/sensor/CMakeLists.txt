@@ -12,6 +12,7 @@ target_sources(${PROJECT_NAME} PRIVATE
     bmp280.c
     ms5611.c
     bmp180.c
+    spl06.c
     cell_count.c
     auto_offset.c
     esc_hw5.c
