@@ -7,7 +7,7 @@
 It allows you to collect data from multiple sensors and transmit it to your receiver using a wide range of telemetry protocols. MSRC is a DIY alternative to commercial solutions, offering significantly reduced weight and cost while maintaining high flexibility and expandability.
 
 ---
-Features and details about this branch
+#### Features and details about this branch
 ### GPS section
 - Serial GPS (NMEA, u-blox UBX)
 - Dynamic platform model for u-blox 8/9/10, see [docs/GPS_dynmodel.md](docs/GPS_dynmodel.md)
