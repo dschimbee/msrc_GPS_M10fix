@@ -147,8 +147,8 @@ local gpsDynModel = { "DynModel", nil, 0, 7, 1, 0x5154, gpsDynModelVal }
 vars[pageEnum.gps] = { gpsEnable, gpsProtocol, gpsBaudrate, gpsRate, gpsDynModel }
 
 -- Page 6 - Vario
-local varioModelStr = { "None", "BMP280", "MS5611", "BMP180" }
-local varioModel = { "Model", nil, 0, 3, 1, 0x510A, varioModelStr }
+local varioModelStr = { "None", "BMP280", "MS5611", "BMP180", "SPL06" }
+local varioModel = { "Model", nil, 0, 4, 1, 0x510A, varioModelStr }
 local varioFilterStr = { "Low", "Medium", "High" }
 local varioFilter = { "Filter", nil, 1, 3, 1, 0x5126, varioFilterStr }
 vars[pageEnum.vario] = { varioModel, varioFilter }
