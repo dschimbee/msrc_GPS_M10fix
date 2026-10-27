@@ -26,6 +26,7 @@
 #include "ntc.h"
 #include "pwm_out.h"
 #include "smart_esc.h"
+#include "spl06.h"
 #include "stdlib.h"
 #include "string.h"
 #include "uart.h"
@@ -737,6 +738,32 @@ void jeti_set_config(sensor_jetiex_t **sensor) {
                                          malloc(sizeof(float)), malloc(sizeof(float)),     malloc(sizeof(float)),
                                          malloc(sizeof(float)), malloc(sizeof(uint32_t))};
         xTaskCreate(bmp180_task, "bmp180_task", STACK_BMP180, (void *)&parameter, 2, &task_handle);
+
+        if (config->enable_analog_airspeed) {
+            baro_temp = parameter.temperature;
+            baro_pressure = parameter.pressure;
+        }
+        new_sensor = malloc(sizeof(sensor_jetiex_t));
+        *new_sensor = (sensor_jetiex_t){0,   JETIEX_TYPE_INT14,    JETIEX_FORMAT_0_DECIMAL, "Air temperature",
+                                        "C", parameter.temperature};
+        jeti_add_sensor(new_sensor, sensor);
+        new_sensor = malloc(sizeof(sensor_jetiex_t));
+        *new_sensor =
+            (sensor_jetiex_t){0, JETIEX_TYPE_INT14, JETIEX_FORMAT_0_DECIMAL, "Altitude", "m", parameter.altitude};
+        jeti_add_sensor(new_sensor, sensor);
+        new_sensor = malloc(sizeof(sensor_jetiex_t));
+        *new_sensor =
+            (sensor_jetiex_t){0, JETIEX_TYPE_INT22, JETIEX_FORMAT_2_DECIMAL, "Vspeed", "m/s", parameter.vspeed};
+        jeti_add_sensor(new_sensor, sensor);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    }
+    if (config->i2c_module == I2C_SPL06) {
+        uint16_t vario_interval = config->vario_vspeed_interval * 10;
+        if (vario_interval < 250) vario_interval = 250;
+        spl06_parameters_t parameter = {config->alpha_vario,   config->vario_auto_offset, vario_interval,
+                                         malloc(sizeof(float)), malloc(sizeof(float)),     malloc(sizeof(float)),
+                                         malloc(sizeof(float)), malloc(sizeof(uint32_t))};
+        xTaskCreate(spl06_task, "spl06_task", STACK_SPL06, (void *)&parameter, 2, &task_handle);
 
         if (config->enable_analog_airspeed) {
             baro_temp = parameter.temperature;

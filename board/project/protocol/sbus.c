@@ -25,6 +25,7 @@
 #include "ntc.h"
 #include "pwm_out.h"
 #include "smart_esc.h"
+#include "spl06.h"
 #include "uart.h"
 #include "uart_pio.h"
 #include "voltage.h"
@@ -866,6 +867,26 @@ static void set_config(void) {
                                          malloc(sizeof(float)), malloc(sizeof(float)),     malloc(sizeof(float)),
                                          malloc(sizeof(float)), malloc(sizeof(uint32_t))};
         xTaskCreate(bmp180_task, "bmp180_task", STACK_BMP180, (void *)&parameter, 2, &task_handle);
+
+        if (config->enable_analog_airspeed) {
+            baro_temp = parameter.temperature;
+            baro_pressure = parameter.pressure;
+        }
+        new_sensor = malloc(sizeof(sensor_sbus_t));
+        *new_sensor = (sensor_sbus_t){SBUS_VARIO_ALT, parameter.altitude};
+        add_sensor(SLOT_VARIO_ALT, new_sensor);
+        new_sensor = malloc(sizeof(sensor_sbus_t));
+        *new_sensor = (sensor_sbus_t){SBUS_VARIO_SPEED, parameter.vspeed};
+        add_sensor(SLOT_VARIO_SPEED, new_sensor);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    }
+    if (config->i2c_module == I2C_SPL06) {
+        uint16_t vario_interval = config->vario_vspeed_interval * 10;
+        if (vario_interval < 250) vario_interval = 250;
+        spl06_parameters_t parameter = {config->alpha_vario,   config->vario_auto_offset, vario_interval,
+                                         malloc(sizeof(float)), malloc(sizeof(float)),     malloc(sizeof(float)),
+                                         malloc(sizeof(float)), malloc(sizeof(uint32_t))};
+        xTaskCreate(spl06_task, "spl06_task", STACK_SPL06, (void *)&parameter, 2, &task_handle);
 
         if (config->enable_analog_airspeed) {
             baro_temp = parameter.temperature;

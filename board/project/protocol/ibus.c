@@ -26,6 +26,7 @@
 #include "ntc.h"
 #include "pwm_out.h"
 #include "smart_esc.h"
+#include "spl06.h"
 #include "uart.h"
 #include "uart_pio.h"
 #include "voltage.h"
@@ -862,6 +863,30 @@ static void set_config(sensor_ibus_t **sensor, uint16_t sensormask) {
                                          malloc(sizeof(float)), malloc(sizeof(float)),     malloc(sizeof(float)),
                                          malloc(sizeof(float)), malloc(sizeof(uint32_t))};
         xTaskCreate(bmp180_task, "bmp180_task", STACK_BMP180, (void *)&parameter, 2, &task_handle);
+
+        if (config->enable_analog_airspeed) {
+            baro_temp = parameter.temperature;
+            baro_pressure = parameter.pressure;
+        }
+
+        new_sensor = malloc(sizeof(sensor_ibus_t));
+        *new_sensor = (sensor_ibus_t){IBUS_ID_TEMPERATURE, IBUS_TYPE_U16, parameter.temperature};
+        add_sensor(new_sensor, sensor, sensormask);
+        new_sensor = malloc(sizeof(sensor_ibus_t));
+        *new_sensor = (sensor_ibus_t){IBUS_ID_ALT, IBUS_TYPE_S32, parameter.altitude};
+        add_sensor(new_sensor, sensor, sensormask);
+        new_sensor = malloc(sizeof(sensor_ibus_t));
+        *new_sensor = (sensor_ibus_t){IBUS_ID_CLIMB_RATE, IBUS_TYPE_S16, parameter.vspeed};
+        add_sensor(new_sensor, sensor, sensormask);
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    }
+    if (config->i2c_module == I2C_SPL06) {
+        uint16_t vario_interval = config->vario_vspeed_interval * 10;
+        if (vario_interval < 250) vario_interval = 250;
+        spl06_parameters_t parameter = {config->alpha_vario,   config->vario_auto_offset, vario_interval,
+                                         malloc(sizeof(float)), malloc(sizeof(float)),     malloc(sizeof(float)),
+                                         malloc(sizeof(float)), malloc(sizeof(uint32_t))};
+        xTaskCreate(spl06_task, "spl06_task", STACK_SPL06, (void *)&parameter, 2, &task_handle);
 
         if (config->enable_analog_airspeed) {
             baro_temp = parameter.temperature;
