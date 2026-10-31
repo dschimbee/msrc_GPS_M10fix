@@ -143,6 +143,10 @@ typedef struct ublox_msg_t {
     ublox_crc_t crc;
 } ublox_msg_t;
 
+/* Test aid: read the dynamic platform model back from the module and print it next to the configured value.
+ * UBX-CFG-NAV5 poll works on M8 and M10. Set to 0 for release builds. */
+#define GPS_DYNMODEL_DEBUG 1
+
 static void process(gps_parameters_t *parameter);
 static void parser(uint8_t nmea_cmd, uint8_t cmd_field, uint8_t *buffer, gps_parameters_t *parameter);
 static void send_ublox_message(ublox_msg_t *msg);
@@ -155,9 +159,17 @@ static void ubx_cfg_rate(uint16_t rate);
 static void ubx_cfg_dynmodel(uint8_t dynmodel);
 static void ubx_cfg_valset_dynmodel(uint8_t dynmodel);
 static void ubx_cfg_cfg(void);
+#if GPS_DYNMODEL_DEBUG
+static void ubx_cfg_nav5_poll(void);
+#endif
 static bool set_home_altitude(uint fix_type);
 static bool check_ublox_crc(ublox_msg_t *msg);
 static void set_ublox_crc(ublox_msg_t *msg);
+
+#if GPS_DYNMODEL_DEBUG
+static int16_t module_dynmodel_nav5 = -1;
+static uint32_t config_sent_ms = 0;  // time since boot when the configuration was sent to the module
+#endif
 
 void gps_task(void *parameters) {
     gps_parameters_t parameter = *(gps_parameters_t *)parameters;
@@ -219,6 +231,9 @@ void gps_task(void *parameters) {
     set_baudrate(parameter.baudrate);
     uart_pio_begin(parameter.baudrate, UART_TX_PIO_GPIO, UART_RX_PIO_GPIO, TIMEOUT_US, pio0, PIO0_IRQ_1, 8, 1,
                    UART_PARITY_NONE);
+#if GPS_DYNMODEL_DEBUG
+    config_sent_ms = time_us_32() / 1000;
+#endif
     if (parameter.protocol == UBLOX)
         set_ublox_config(parameter.rate, parameter.dynmodel);
     else
@@ -236,6 +251,22 @@ void gps_task(void *parameters) {
             queued = uart_pio_available();
             process(&parameter);
         } while (uart_pio_available() > 0 && uart_pio_available() < queued);
+#if GPS_DYNMODEL_DEBUG
+        if (parameter.protocol == UBLOX) {
+            static bool query_sent = false;
+            static uint32_t query_ts = 0;
+            if (!query_sent || time_us_32() - query_ts >= 5000000) {
+                query_sent = true;
+                query_ts = time_us_32();
+                // status with the value from the previous poll; the answer arrives in process()
+                debug("\nGPS dynmodel: module NAV5 %i (config %u)%s, baud %u, config sent %u ms after boot, now %u ms",
+                      module_dynmodel_nav5, parameter.dynmodel,
+                      (module_dynmodel_nav5 >= 0 && module_dynmodel_nav5 != parameter.dynmodel) ? " NOT ACCEPTED" : "",
+                      parameter.baudrate, config_sent_ms, time_us_32() / 1000);
+                ubx_cfg_nav5_poll();
+            }
+        }
+#endif
     }
 }
 
@@ -391,6 +422,23 @@ static void process(gps_parameters_t *parameter) {
             debug("\nGPS (%u) < NAV-DOP: h: %.2f v: %.2f", uxTaskGetStackHighWaterMark(NULL), *parameter->hdop,
                   *parameter->vdop);
         }
+
+#if GPS_DYNMODEL_DEBUG
+        // UBX-ACK-ACK / UBX-ACK-NAK: class and id of the acknowledged message
+        else if (msg.header.class == 0x05 && msg.header.size == 2) {
+            uint8_t ack[4];  // class, id, checksum
+            uart_pio_read_bytes(ack, sizeof(ack));
+            debug("\nGPS < %s: Class: %u Id: %u", msg.header.id == 1 ? "ACK" : "NAK", ack[0], ack[1]);
+        }
+
+        // UBX-CFG-NAV5 poll response: mask[2], dynModel[1], ...
+        else if (msg.header.class == 0x06 && msg.header.id == 0x24 && msg.header.size == sizeof(ublox_cfg_nav5_t)) {
+            uint8_t nav5[sizeof(ublox_cfg_nav5_t) + sizeof(ublox_crc_t)];
+            uart_pio_read_bytes(nav5, sizeof(nav5));
+            module_dynmodel_nav5 = nav5[2];
+            debug("\nGPS < NAV5 dynModel: %u", nav5[2]);
+        }
+#endif
 
         // Unknown
         else {
@@ -570,6 +618,16 @@ static void ubx_cfg_rate(uint16_t rate) {
     ublox_msg.payload = (uint8_t *)&payload;
     send_ublox_message(&ublox_msg);
 }
+
+#if GPS_DYNMODEL_DEBUG
+static void ubx_cfg_nav5_poll(void) {
+    // UBX-CFG-NAV5 poll (0x06 0x24, empty payload)
+    ublox_msg_t ublox_msg;
+    ublox_msg.header = (ublox_header_t){.header = 0x62B5, .class = 0x06, .id = 0x24, .size = 0};
+    ublox_msg.payload = NULL;
+    send_ublox_message(&ublox_msg);
+}
+#endif
 
 static void ubx_cfg_cfg(void) {
     ublox_msg_t ublox_msg;
