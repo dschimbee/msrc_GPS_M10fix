@@ -46,6 +46,7 @@
 // mean of P0_READINGS raw readings instead of a single noisy one.
 #define DISCARD_READINGS 25  // 1 s at SENSOR_INTERVAL_MS
 #define P0_READINGS 10
+#define DEBUG_EVERY_READINGS 3  // divider for debug output  (25/3 = 8hz)
 // A jump between two readings that is larger than this is an I2C glitch (250 Pa are about 20 m)
 #define MAX_PRESSURE_STEP 250.0f
 
@@ -73,11 +74,13 @@ void spl06_task(void *parameters) {
 
     uint8_t address;
     while ((address = begin(&calibration)) == 0) vTaskDelay(1000 / portTICK_PERIOD_MS);  // 0: no SPL06 found
+    uint debug_count = 0;
     while (1) {
         read(&parameter, &calibration, address);
-        debug("\nSPL06 (%u) < Temp: %.2f Pressure: %.0f Altitude: %0.2f Vspeed: %.2f",
-              uxTaskGetStackHighWaterMark(NULL), *parameter.temperature, *parameter.pressure, *parameter.altitude,
-              *parameter.vspeed);
+        if (debug_count++ % DEBUG_EVERY_READINGS == 0)  // 8hz, not at every reading
+            debug("\nSPL06 (%u) < Temp: %.2f Pressure: %.0f Altitude: %0.2f Vspeed: %.2f",
+                  uxTaskGetStackHighWaterMark(NULL), *parameter.temperature, *parameter.pressure, *parameter.altitude,
+                  *parameter.vspeed);
         vTaskDelay(SENSOR_INTERVAL_MS / portTICK_PERIOD_MS);
     }
 }
