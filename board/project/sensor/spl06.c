@@ -18,6 +18,8 @@
 #define REGISTER_ID 0x0D
 #define REGISTER_COEF 0x10  // 0x10-0x21 (18 bytes)
 
+#define CHIP_ID 0x10  // value of REGISTER_ID (product id 0, revision 1)
+
 #define MEAS_CFG_COEF_RDY 0x80
 #define MEAS_CFG_SENSOR_RDY 0x40
 #define MEAS_CTRL_CONTINUOUS 0x07  // continuous pressure and temperature measurement
@@ -50,6 +52,8 @@
 static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration, uint8_t address);
 static void update_vspeed(float *vspeed, uint32_t now, float altitude, uint32_t window_us);
 static uint8_t begin(spl06_calibration_t *calibration);
+static bool write_register(uint8_t address, uint8_t reg, uint8_t value);
+static bool read_registers(uint8_t address, uint8_t reg, uint8_t *data, size_t length);
 static void parse_calibration(const uint8_t *data, spl06_calibration_t *calibration);
 static int32_t sign_extend(uint32_t value, uint bits);
 static void compensate(const spl06_calibration_t *calibration, int32_t raw_pressure, int32_t raw_temperature,
@@ -67,7 +71,8 @@ void spl06_task(void *parameters) {
     spl06_calibration_t calibration;
     vTaskDelay(500 / portTICK_PERIOD_MS);
 
-    uint8_t address = begin(&calibration);
+    uint8_t address;
+    while ((address = begin(&calibration)) == 0) vTaskDelay(1000 / portTICK_PERIOD_MS);  // 0: no SPL06 found
     while (1) {
         read(&parameter, &calibration, address);
         debug("\nSPL06 (%u) < Temp: %.2f Pressure: %.0f Altitude: %0.2f Vspeed: %.2f",
@@ -87,9 +92,7 @@ static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration
     static uint discard_readings = DISCARD_READINGS;
     float pressure_raw;
 
-    data[0] = REGISTER_PSR_B2;
-    i2c_write_blocking(i2c0, address, data, 1, true);
-    if (i2c_read_blocking(i2c0, address, data, 6, false) != 6) return;
+    if (!read_registers(address, REGISTER_PSR_B2, data, 6)) return;
     int32_t raw_pressure = sign_extend(((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2], 24);
     int32_t raw_temperature = sign_extend(((uint32_t)data[3] << 16) | ((uint32_t)data[4] << 8) | data[5], 24);
 
@@ -132,57 +135,73 @@ static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration
 #endif
 }
 
+static bool write_register(uint8_t address, uint8_t reg, uint8_t value) {
+    uint8_t data[2] = {reg, value};
+    return i2c_write_blocking(i2c0, address, data, 2, false) == 2;
+}
+
+static bool read_registers(uint8_t address, uint8_t reg, uint8_t *data, size_t length) {
+    if (i2c_write_blocking(i2c0, address, &reg, 1, true) != 1) return false;
+    return i2c_read_blocking(i2c0, address, data, length, false) == (int)length;
+}
+
+// Returns the I2C address of the sensor, or 0 if no SPL06 was found or it could not be configured
 static uint8_t begin(spl06_calibration_t *calibration) {
-    i2c_init(i2c0, 100 * 1000);
-    gpio_set_function(I2C0_SDA_GPIO, GPIO_FUNC_I2C);
-    gpio_set_function(I2C0_SCL_GPIO, GPIO_FUNC_I2C);
-    gpio_pull_up(I2C0_SDA_GPIO);
-    gpio_pull_up(I2C0_SCL_GPIO);
+    static bool i2c_ready = false;
+    if (!i2c_ready) {
+        i2c_init(i2c0, 100 * 1000);
+        gpio_set_function(I2C0_SDA_GPIO, GPIO_FUNC_I2C);
+        gpio_set_function(I2C0_SCL_GPIO, GPIO_FUNC_I2C);
+        gpio_pull_up(I2C0_SDA_GPIO);
+        gpio_pull_up(I2C0_SCL_GPIO);
+        i2c_ready = true;
+    }
 
     uint8_t data[18] = {0};
 
-    // Find sensor address
-    uint8_t address = I2C_ADDRESS_1;
-    data[0] = REGISTER_ID;
-    if (i2c_write_blocking(i2c0, I2C_ADDRESS_1, data, 1, true) < 0) address = I2C_ADDRESS_2;
-    i2c_read_blocking(i2c0, address, data, 1, false);  // complete the transaction
+    // Find sensor address: the chip id must match, other devices may use the same addresses
+    uint8_t address = 0;
+    const uint8_t addresses[] = {I2C_ADDRESS_1, I2C_ADDRESS_2};
+    for (uint i = 0; i < sizeof(addresses); i++) {
+        if (read_registers(addresses[i], REGISTER_ID, data, 1) && data[0] == CHIP_ID) {
+            address = addresses[i];
+            break;
+        }
+    }
+    if (address == 0) {
+        static bool reported = false;
+        if (!reported) debug("\nSPL06 not found");
+        reported = true;
+        return 0;
+    }
     debug("\nSPL06 address: 0x%X id: 0x%X", address, data[0]);
 
     // Soft reset, then wait until coefficients and sensor are ready (max 40 ms)
-    data[0] = REGISTER_RESET;
-    data[1] = RESET_SOFT;
-    i2c_write_blocking(i2c0, address, data, 2, false);
+    if (!write_register(address, REGISTER_RESET, RESET_SOFT)) return 0;
     vTaskDelay(50 / portTICK_PERIOD_MS);
-    for (uint i = 0; i < 10; i++) {
-        data[0] = REGISTER_MEAS_CFG;
-        i2c_write_blocking(i2c0, address, data, 1, true);
-        i2c_read_blocking(i2c0, address, data, 1, false);
-        if ((data[0] & (MEAS_CFG_COEF_RDY | MEAS_CFG_SENSOR_RDY)) == (MEAS_CFG_COEF_RDY | MEAS_CFG_SENSOR_RDY)) break;
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+    bool ready = false;
+    for (uint i = 0; i < 10 && !ready; i++) {
+        if (read_registers(address, REGISTER_MEAS_CFG, data, 1) &&
+            (data[0] & (MEAS_CFG_COEF_RDY | MEAS_CFG_SENSOR_RDY)) == (MEAS_CFG_COEF_RDY | MEAS_CFG_SENSOR_RDY))
+            ready = true;
+        else
+            vTaskDelay(10 / portTICK_PERIOD_MS);
     }
+    if (!ready) return 0;
 
     // Read calibration coefficients
-    data[0] = REGISTER_COEF;
-    i2c_write_blocking(i2c0, address, data, 1, true);
-    i2c_read_blocking(i2c0, address, data, 18, false);
+    if (!read_registers(address, REGISTER_COEF, data, 18)) return 0;
     parse_calibration(data, calibration);
     calibration->kp = SCALE_FACTOR_PRESSURE;
     calibration->kt = SCALE_FACTOR_TEMPERATURE;
 
     // Configure sensor
-    data[0] = REGISTER_PRS_CFG;
-    data[1] = (PRESSURE_RATE << 4) | PRESSURE_PRECISION;
-    i2c_write_blocking(i2c0, address, data, 2, false);
-    data[0] = REGISTER_TMP_CFG;
     // The calibration coefficients c0/c1 refer to the external (MEMS) temperature sensor: TMP_EXT must be 1
-    data[1] = TMP_CFG_EXTERNAL | (TEMPERATURE_RATE << 4) | TEMPERATURE_PRECISION;
-    i2c_write_blocking(i2c0, address, data, 2, false);
-    data[0] = REGISTER_CFG_REG;
-    data[1] = 0;
-    i2c_write_blocking(i2c0, address, data, 2, false);
-    data[0] = REGISTER_MEAS_CFG;
-    data[1] = MEAS_CTRL_CONTINUOUS;
-    i2c_write_blocking(i2c0, address, data, 2, false);
+    if (!write_register(address, REGISTER_PRS_CFG, (PRESSURE_RATE << 4) | PRESSURE_PRECISION)) return 0;
+    if (!write_register(address, REGISTER_TMP_CFG, TMP_CFG_EXTERNAL | (TEMPERATURE_RATE << 4) | TEMPERATURE_PRECISION))
+        return 0;
+    if (!write_register(address, REGISTER_CFG_REG, 0)) return 0;
+    if (!write_register(address, REGISTER_MEAS_CFG, MEAS_CTRL_CONTINUOUS)) return 0;
     return address;
 }
 
