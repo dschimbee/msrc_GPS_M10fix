@@ -1,5 +1,6 @@
 #include "spl06.h"
 
+#include <math.h>
 #include <stdio.h>
 
 #include "auto_offset.h"
@@ -39,6 +40,13 @@
 #define I2C_ADDRESS_2 0x76  // SDO low
 #define SENSOR_INTERVAL_MS 40
 
+// Start-up: the first readings are discarded so that the sensor can settle, then the reference pressure (P0) is the
+// mean of P0_READINGS raw readings instead of a single noisy one.
+#define DISCARD_READINGS 25  // 1 s at SENSOR_INTERVAL_MS
+#define P0_READINGS 10
+// A jump between two readings that is larger than this is an I2C glitch (250 Pa are about 20 m)
+#define MAX_PRESSURE_STEP 250.0f
+
 static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration, uint8_t address);
 static void update_vspeed(float *vspeed, uint32_t now, float altitude, uint32_t window_us);
 static uint8_t begin(spl06_calibration_t *calibration);
@@ -73,7 +81,10 @@ static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration
     uint8_t data[6];
     static float pressure_initial = 0;
     static float pressure_filtered = 0;
-    static uint discard_readings = 5;
+    static float pressure_last = 0;
+    static float pressure_sum = 0;
+    static uint pressure_count = 0;
+    static uint discard_readings = DISCARD_READINGS;
     float pressure_raw;
 
     data[0] = REGISTER_PSR_B2;
@@ -86,25 +97,34 @@ static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration
 
     compensate(calibration, raw_pressure, raw_temperature, parameter->temperature, &pressure_raw);  // Pa
 
-    // Exponential moving average on the pressure (config: averaging elements vario, alpha = 1 means no smoothing).
-    // During the start-up discard phase the filter follows the raw value, so that the filter and the reference
-    // pressure (P0) start from a valid reading instead of an invalid first sample.
+    // Ignore a reading that jumps from the previous one: it is a glitch. The reading after it is compared with the
+    // glitch and ignored too, the third one is accepted again (so a real step is not blocked for long).
+    float pressure_previous = pressure_last;
+    pressure_last = pressure_raw;
+    if (pressure_previous != 0 && fabsf(pressure_raw - pressure_previous) > MAX_PRESSURE_STEP) return;
+
+    // Exponential moving average on the pressure (config: averaging elements vario). get_average() handles
+    // alpha > 1 (no smoothing). During the start-up discard phase the filter follows the raw value.
     if (pressure_filtered == 0 || discard_readings > 0)
         pressure_filtered = pressure_raw;
     else
-        pressure_filtered += parameter->alpha_vario * (pressure_raw - pressure_filtered);
+        pressure_filtered = get_average(parameter->alpha_vario, pressure_filtered, pressure_raw);
     *parameter->pressure = pressure_filtered;
 
     if (discard_readings > 0) {
         discard_readings--;
         return;
     }
-    if (pressure_initial == 0) pressure_initial = *parameter->pressure;
+    if (pressure_initial == 0) {  // reference pressure: mean of the first P0_READINGS readings
+        pressure_sum += pressure_raw;
+        if (++pressure_count < P0_READINGS) return;
+        pressure_initial = pressure_sum / pressure_count;
+        debug("\nSPL06 P0: %.0f", pressure_initial);
+    }
     *parameter->altitude = get_altitude(*parameter->pressure, *parameter->temperature, pressure_initial);
     uint32_t now = time_us_32();
     *parameter->alt_ts = now;
     update_vspeed(parameter->vspeed, now, *parameter->altitude, (uint32_t)parameter->vario_interval * 1000);
-    debug("\nSPL06 P0: %.0f", pressure_initial);
 #ifdef SIM_SENSORS
     *parameter->temperature = 12.34;
     *parameter->pressure = 1234.56;
