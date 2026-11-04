@@ -759,7 +759,7 @@ void jeti_set_config(sensor_jetiex_t **sensor) {
     }
     if (config->i2c_module == I2C_SPL06) {
         uint16_t vario_interval = config->vario_vspeed_interval * 10;
-        if (vario_interval < 250) vario_interval = 250;
+        if (vario_interval < SPL06_VARIO_INTERVAL_MIN_MS) vario_interval = SPL06_VARIO_INTERVAL_MIN_MS;
         spl06_parameters_t parameter = {config->alpha_vario,   config->vario_auto_offset, vario_interval,
                                          malloc(sizeof(float)), malloc(sizeof(float)),     malloc(sizeof(float)),
                                          malloc(sizeof(float)), malloc(sizeof(uint32_t))};

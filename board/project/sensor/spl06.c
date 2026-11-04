@@ -40,7 +40,7 @@
 
 #define I2C_ADDRESS_1 0x77  // SDO high (default of most breakout boards)
 #define I2C_ADDRESS_2 0x76  // SDO low
-#define SENSOR_INTERVAL_MS 40
+#define SENSOR_INTERVAL_MS SPL06_VARIO_INTERVAL_MIN_MS
 
 // Start-up: the first readings are discarded so that the sensor can settle, then the reference pressure (P0) is the
 // mean of P0_READINGS raw readings instead of a single noisy one.

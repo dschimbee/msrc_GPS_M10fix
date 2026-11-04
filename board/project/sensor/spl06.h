@@ -3,6 +3,10 @@
 
 #include "common.h"
 
+// Smallest vario interval (ms) accepted for the SPL06 (all other sensors: 250 ms). Equal to the measurement interval:
+// a shorter window would not contain a new reading.
+#define SPL06_VARIO_INTERVAL_MIN_MS 40
+
 typedef struct spl06_parameters_t {
     float alpha_vario;
     bool auto_offset;
