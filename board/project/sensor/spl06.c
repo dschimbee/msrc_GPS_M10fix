@@ -40,18 +40,24 @@
 
 #define I2C_ADDRESS_1 0x77  // SDO high (default of most breakout boards)
 #define I2C_ADDRESS_2 0x76  // SDO low
-#define SENSOR_INTERVAL_MS SPL06_VARIO_INTERVAL_MIN_MS
+#define SENSOR_INTERVAL_MS SPL06_SENSOR_INTERVAL_MS
 
+#if SPL06_EXTENDED_PROCESSING
 // Start-up: the first readings are discarded so that the sensor can settle, then the reference pressure (P0) is the
 // mean of P0_READINGS raw readings instead of a single noisy one.
 #define DISCARD_READINGS 25  // 1 s at SENSOR_INTERVAL_MS
 #define P0_READINGS 10
-#define DEBUG_EVERY_READINGS 3  // divider for debug output  (25/3 = 8hz)
 // A jump between two readings that is larger than this is an I2C glitch (250 Pa are about 20 m)
 #define MAX_PRESSURE_STEP 250.0f
+#else
+#define DISCARD_READINGS 5  // as BMP280, BMP180 and MS5611
+#endif
+#define DEBUG_EVERY_READINGS 3  // divider for debug output  (25/3 = 8hz)
 
 static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration, uint8_t address);
+#if SPL06_EXTENDED_PROCESSING
 static void update_vspeed(float *vspeed, uint32_t now, float altitude, uint32_t window_us);
+#endif
 static uint8_t begin(spl06_calibration_t *calibration);
 static bool write_register(uint8_t address, uint8_t reg, uint8_t value);
 static bool read_registers(uint8_t address, uint8_t reg, uint8_t *data, size_t length);
@@ -88,11 +94,16 @@ void spl06_task(void *parameters) {
 static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration, uint8_t address) {
     uint8_t data[6];
     static float pressure_initial = 0;
+    static uint discard_readings = DISCARD_READINGS;
+#if SPL06_EXTENDED_PROCESSING
     static float pressure_filtered = 0;
     static float pressure_last = 0;
     static float pressure_sum = 0;
     static uint pressure_count = 0;
-    static uint discard_readings = DISCARD_READINGS;
+#else
+    static uint32_t ts_vspeed = 0;
+    static float alt_prev = 0;
+#endif
     float pressure_raw;
 
     if (!read_registers(address, REGISTER_PSR_B2, data, 6)) return;
@@ -103,6 +114,7 @@ static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration
 
     compensate(calibration, raw_pressure, raw_temperature, parameter->temperature, &pressure_raw);  // Pa
 
+#if SPL06_EXTENDED_PROCESSING
     // Ignore a reading that jumps from the previous one: it is a glitch. The reading after it is compared with the
     // glitch and ignored too, the third one is accepted again (so a real step is not blocked for long).
     float pressure_previous = pressure_last;
@@ -127,10 +139,30 @@ static void read(spl06_parameters_t *parameter, spl06_calibration_t *calibration
         pressure_initial = pressure_sum / pressure_count;
         debug("\nSPL06 P0: %.0f", pressure_initial);
     }
+#else
+    // Same processing as BMP280, BMP180 and MS5611: no filtering, P0 is the first reading after the discarded ones
+    if (discard_readings > 0) {
+        discard_readings--;
+        return;
+    }
+    *parameter->pressure = pressure_raw;
+    if (pressure_initial == 0) pressure_initial = *parameter->pressure;
+#endif
     *parameter->altitude = get_altitude(*parameter->pressure, *parameter->temperature, pressure_initial);
     uint32_t now = time_us_32();
     *parameter->alt_ts = now;
+#if SPL06_EXTENDED_PROCESSING
     update_vspeed(parameter->vspeed, now, *parameter->altitude, (uint32_t)parameter->vario_interval * 1000);
+#else
+    if (!ts_vspeed) {
+        alt_prev = *parameter->altitude;
+        ts_vspeed = now;
+    } else if (now - ts_vspeed >= parameter->vario_interval * 1000) {
+        *parameter->vspeed = (*parameter->altitude - alt_prev) / ((now - ts_vspeed) / 1000000.0f);
+        alt_prev = *parameter->altitude;
+        ts_vspeed = now;
+    }
+#endif
 #ifdef SIM_SENSORS
     *parameter->temperature = 12.34;
     *parameter->pressure = 1234.56;
@@ -237,6 +269,7 @@ static void compensate(const spl06_calibration_t *calibration, int32_t raw_press
                 traw_sc * praw_sc * ((float)calibration->c11 + praw_sc * (float)calibration->c21);
 }
 
+#if SPL06_EXTENDED_PROCESSING
 // Vertical speed from a sliding window: every cycle the altitude is compared with the altitude from at least
 // window_us ago, so the value is refreshed at the sensor rate instead of once per window.
 #define VSPEED_BUFFER_SIZE 80  // covers 3.2 s at 40 ms, enough for the maximum vario interval (2.55 s)
@@ -260,3 +293,4 @@ static void update_vspeed(float *vspeed, uint32_t now, float altitude, uint32_t 
     }
     // not enough history yet: keep the previous value
 }
+#endif
