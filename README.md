@@ -6,6 +6,9 @@
 
 It allows you to collect data from multiple sensors and transmit it to your receiver using a wide range of telemetry protocols. MSRC is a DIY alternative to commercial solutions, offering significantly reduced weight and cost while maintaining high flexibility and expandability.
 
+IF you use the SPL06 integration please use the Web-UI
+   https://github.com/dschimbee/Light-WEB-UI-for-MSRC
+
 ---
 
 ## Features
@@ -89,6 +92,8 @@ It allows you to collect data from multiple sensors and transmit it to your rece
 2. Flash the firmware to your RP2040 board  
 3. Connect your sensors and receiver  
 4. Configure the device using **MSRC Link**  
+   IF you use the SPL06 integration please use the Web-UI
+   https://github.com/dschimbee/Light-WEB-UI-for-MSRC
 5. Check telemetry on your transmitter  
 
 👉 For detailed instructions, see the [Wiki](https://github.com/dgatf/msrc/wiki)
