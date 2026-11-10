@@ -5,7 +5,8 @@
 **MSRC** is a lightweight, low-cost, and highly flexible telemetry system for RC models, based on the RP2040 microcontroller.
 
 It allows you to collect data from multiple sensors and transmit it to your receiver using a wide range of telemetry protocols. MSRC is a DIY alternative to commercial solutions, offering significantly reduced weight and cost while maintaining high flexibility and expandability.
-
+If you need the SPL06 please see the branch spl06-preview
+https://github.com/dschimbee/msrc_GPS_M10fix/tree/spl06-preview
 IF you use the SPL06 integration please use the Web-UI
    https://github.com/dschimbee/Light-WEB-UI-for-MSRC
 
